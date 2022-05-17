@@ -19,7 +19,7 @@
 #include "igtlPointMessage.h"
 #include "igtlClientSocket.h"
 
-
+int ReceivePoint(igtl::Socket* socket, igtl::MessageHeader* header);
 int main(int argc, char* argv[])
 {
   //------------------------------------------------------------
@@ -101,10 +101,72 @@ int main(int argc, char* argv[])
   // Send
   socket->Send(pointMsg->GetPackPointer(), pointMsg->GetPackSize());
   
-  
+  //pętla
+  while(1)
+  {
+	  //Przygotowanie pamięci na odbiór danych
+	  igtl::MessageHeader::Pointer header;
+      header = igtl::MessageHeader::New();
+      header->InitPack(); 
+      bool timeout(false);
+	  
+	  //Odebranie danych, wstępna weryfikacja, czy cała wiadomość dotarła
+	  int r = socket->Receive(header->GetPackPointer(), header->GetPackSize(),timeout);
+	  if (r != header->GetPackSize())
+	  {
+		  continue;
+	  }
+	  if (r == 0)
+      {
+          socket->CloseSocket();
+      }
+	  header->Unpack();
+      ReceivePoint(socket, header);
+  }									 
+						
   //------------------------------------------------------------
   // Close the socket
   socket->CloseSocket();
 
 }
 
+int ReceivePoint(igtl::Socket* socket, igtl::MessageHeader* header)
+{
+	//bufor wiadomości, aby otrzymać dane
+	igtl::PointMessage::Pointer pointMsg;
+    pointMsg = igtl::PointMessage::New();
+    pointMsg->SetMessageHeader(header);
+    pointMsg->AllocatePack();
+	//odebranie danych od socketa
+	bool timeout(false);
+    socket->Receive(pointMsg->GetPackBodyPointer(), pointMsg->GetPackBodySize(), timeout);
+	
+	int c = pointMsg->Unpack(1);
+
+    if (c & igtl::MessageHeader::UNPACK_BODY) // if CRC check is OK
+    {
+        int nElements = pointMsg->GetNumberOfPointElement();
+        for (int i = 0; i < nElements; i++)
+        {
+            igtl::PointElement::Pointer pointElement;
+            pointMsg->GetPointElement(i, pointElement);
+
+            igtlUint8 rgba[4];
+            pointElement->GetRGBA(rgba);
+
+            igtlFloat32 pos[3];
+            pointElement->GetPosition(pos);
+
+            std::cerr << "========== Element #" << i << " ==========" << std::endl;
+            std::cerr << " Name      : " << pointElement->GetName() << std::endl;
+            std::cerr << " GroupName : " << pointElement->GetGroupName() << std::endl;
+            std::cerr << " RGBA      : ( " << (int)rgba[0] << ", " << (int)rgba[1] << ", " << (int)rgba[2] << ", " << (int)rgba[3] << " )" << std::endl;
+            std::cerr << " Position  : ( " << std::fixed << pos[0] << ", " << pos[1] << ", " << pos[2] << " )" << std::endl;
+            std::cerr << " Radius    : " << std::fixed << pointElement->GetRadius() << std::endl;
+            std::cerr << " Owner     : " << pointElement->GetOwner() << std::endl;
+            std::cerr << "================================" << std::endl;
+        }
+    }
+	
+	return 1;
+}
